@@ -2,7 +2,7 @@
 
 本目录汇总了开源项目 [PhysicsNeMo v2.0.0](https://github.com/NVIDIA/physicsnemo/tree/v2.0.0) 官方仓库中支持的流体相关模型/案例，供沐曦（MetaX）GPU 上的 AI for Science 场景参考与使用。
 
-沐曦（MetaX）已完成对 PhysicsNeMo 的适配，适配说明见 [MetaX-MACA/AI4S-Framework/PhysicsNeMo](https://github.com/MetaX-MACA/AI4S-Framework/tree/main/PhysicsNeMo)。
+沐曦（MetaX）已完成对 PhysicsNeMo 的适配，适配说明见本仓库的 [PhysicsNeMo](../../Frameworks/PhysicsNeMo/)。
 
 ---
 
@@ -15,7 +15,7 @@
 | 资源                  | 链接                                                                         |
 | :-------------------- | :--------------------------------------------------------------------------- |
 | PhysicsNeMo 官方仓库  | https://github.com/NVIDIA/physicsnemo/tree/v2.0.0                            |
-| 沐曦（MetaX）适配说明 | https://github.com/MetaX-MACA/AI4S-Framework/tree/main/PhysicsNeMo           |
+| 沐曦（MetaX）适配说明 | [PhysicsNeMo](../../Frameworks/PhysicsNeMo/)                                |
 | CFD 示例目录          | https://github.com/NVIDIA/physicsnemo/tree/v2.0.0/examples/cfd               |
 | PhysicsNeMo 官方文档  | https://docs.nvidia.com/deeplearning/physicsnemo/physicsnemo-core/index.html |
 | 上游许可证            | https://github.com/NVIDIA/physicsnemo/blob/v2.0.0/LICENSE.txt                    |

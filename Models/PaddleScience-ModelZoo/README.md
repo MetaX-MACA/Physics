@@ -2,7 +2,7 @@
 
 本目录汇总了开源项目 [PaddleScience](https://github.com/PaddlePaddle/PaddleScience) 官方仓库中支持的流体相关模型/案例，供沐曦（MetaX）GPU 上的 AI for Science 场景参考与使用。
 
-沐曦（MetaX）已完成对 PaddleScience 的适配，适配说明见 [MetaX-MACA/AI4S-Framework/PaddleScience](https://github.com/MetaX-MACA/AI4S-Framework/tree/main/PaddleScience)。
+沐曦（MetaX）已完成对 PaddleScience 的适配，适配说明见本仓库的 [PaddleScience](../../Frameworks/PaddleScience/)。
 
 ---
 
@@ -15,7 +15,7 @@
 | 资源 | 链接 |
 | :--- | :--- |
 | 项目主页 | https://github.com/PaddlePaddle/PaddleScience |
-| 沐曦（MetaX）适配说明 | https://github.com/MetaX-MACA/AI4S-Framework/tree/main/PaddleScience |
+| 沐曦（MetaX）适配说明 | [PaddleScience](../../Frameworks/PaddleScience/)                       |
 | 官方文档 | https://paddlescience-docs.readthedocs.io/zh-cn/latest/ |
 | 多硬件支持列表 | https://paddlescience-docs.readthedocs.io/zh-cn/latest/multi_device/ |
 | 开源协议 | [Apache License 2.0](https://github.com/PaddlePaddle/PaddleScience/blob/develop/LICENSE) |
@@ -36,7 +36,7 @@
 | darcy | 2D 达西流 | https://github.com/PaddlePaddle/PaddleScience/tree/develop/examples/darcy | [Darcy2D](https://paddlescience-docs.readthedocs.io/zh-cn/latest/examples/darcy2d/) | — |
 | deepcfd | 任意 2D 几何体绕流（DeepCFD） | https://github.com/PaddlePaddle/PaddleScience/tree/develop/examples/deepcfd | [DeepCFD](https://paddlescience-docs.readthedocs.io/zh-cn/latest/examples/deepcfd/) | — |
 | deephpms | 伯格斯方程（Burgers，流体动力学基础方程） | https://github.com/PaddlePaddle/PaddleScience/tree/develop/examples/deephpms | [DeepHPMs](https://paddlescience-docs.readthedocs.io/zh-cn/latest/examples/deephpms/) | — |
-| drivaernet | 汽车表面阻力预测（DrivAerNet） | https://github.com/PaddlePaddle/PaddleScience/tree/develop/examples/drivaernet | [DrivAerNet](https://paddlescience-docs.readthedocs.io/zh-cn/latest/examples/drivaernet/) | [DrivAerNet](./DrivAerNet/REAME.md) |
+| drivaernet | 汽车表面阻力预测（DrivAerNet） | https://github.com/PaddlePaddle/PaddleScience/tree/develop/examples/drivaernet | [DrivAerNet](https://paddlescience-docs.readthedocs.io/zh-cn/latest/examples/drivaernet/) | [DrivAerNet](./DrivAerNet/README.md) |
 | fsi | 流固耦合 / 涡激振动（VIV） | https://github.com/PaddlePaddle/PaddleScience/tree/develop/examples/fsi | [ViV](https://paddlescience-docs.readthedocs.io/zh-cn/latest/examples/viv/) | — |
 | ldc | 2D 方腔流（定常 / 非定常） | https://github.com/PaddlePaddle/PaddleScience/tree/develop/examples/ldc | [LDC2D_steady](https://paddlescience-docs.readthedocs.io/zh-cn/latest/examples/ldc2d_steady/) · [LDC2D_unsteady](https://paddlescience-docs.readthedocs.io/zh-cn/latest/examples/ldc2d_unsteady/) | — |
 | ns | 2D 方腔浮力驱动流（N-S 方程，CViT） | https://github.com/PaddlePaddle/PaddleScience/tree/develop/examples/ns | [CViT(NS)](https://paddlescience-docs.readthedocs.io/zh-cn/latest/examples/ns_cvit/) | — |
