@@ -2,7 +2,7 @@
 
 本项目汇集了多个可用于 **沐曦（MetaX）GPU** 的 **Physics 模型、物理仿真应用与科学计算框架**，面向物理与工程问题提供从数值模拟到数据驱动建模的模型、工具与开发环境。
 
-项目持续跟进并支持 Physics 与 Scientific Machine Learning 领域的主流及前沿技术，覆盖**物理信息神经网络、神经算子、复杂几何建模与代理建模**等方向，并支持 **Transolver、GeoPT、DoMINO、AeroGraphNet** 等代表性模型。
+项目持续跟进并支持 Physics 与 Scientific Machine Learning 领域的主流及前沿技术，覆盖**物理信息神经网络、神经算子、复杂几何建模与代理建模**等方向，并支持 **Transolver、[GeoPT](https://github.com/MetaX-MACA/Physics/tree/main/Models/GeoPT)、[DoMINO](https://github.com/MetaX-MACA/Physics/tree/main/Models/PhysicsNeMo-ModelZoo/Domino)、[AeroGraphNet](https://github.com/MetaX-MACA/Physics/tree/main/Models/PhysicsNeMo-ModelZoo/AeroGraphNet)** 等代表性模型。
 
 ---
 
@@ -42,9 +42,9 @@ Physics/
 
 本项目围绕 **Models、Simulation、Frameworks** 三类能力展开：
 
-- **Models**：支持 DeepCFD、GeoPT、Transolver、DoMINO、AeroGraphNet 等代表性 Physics 模型，并通过 PhysicsNeMo-ModelZoo、PaddleScience-ModelZoo 持续扩展模型与案例覆盖。
+- **[Models](https://github.com/MetaX-MACA/Physics/tree/main/Models)**：支持 [DeepCFD](https://github.com/MetaX-MACA/Physics/tree/main/Models/DeepCFD)、[GeoPT](https://github.com/MetaX-MACA/Physics/tree/main/Models/GeoPT)、Transolver、[DoMINO](https://github.com/MetaX-MACA/Physics/tree/main/Models/PhysicsNeMo-ModelZoo/Domino)、[AeroGraphNet](https://github.com/MetaX-MACA/Physics/tree/main/Models/PaddleScience-ModelZoo/DrivAerNet) 等代表性 Physics 模型，并通过 [PhysicsNeMo-ModelZoo](https://github.com/MetaX-MACA/Physics/tree/main/Models/PhysicsNeMo-ModelZoo)、[PaddleScience-ModelZoo](https://github.com/MetaX-MACA/Physics/tree/main/Models/PaddleScience-ModelZoo) 持续扩展模型与案例覆盖。
 - **Simulation**：预留 GPU 加速物理数值模拟应用目录，当前仅包含分类说明。
-- **Frameworks**：支持 PhysicsNeMo、PaddleScience、DeepXDE、NeuralOperator 等主流 Physics 与 Scientific Machine Learning 开发框架。
+- **[Frameworks](https://github.com/MetaX-MACA/Physics/tree/main/Frameworks)**：支持 [PhysicsNeMo](https://github.com/MetaX-MACA/Physics/tree/main/Frameworks/PhysicsNeMo)、[PaddleScience](https://github.com/MetaX-MACA/Physics/tree/main/Frameworks/PaddleScience)、[DeepXDE](https://github.com/MetaX-MACA/Physics/tree/main/Frameworks/DeepXDE)、[NeuralOperator](https://github.com/MetaX-MACA/Physics/tree/main/Frameworks/NeuralOperator) 等主流 Physics 与 Scientific Machine Learning 开发框架。
 
 三类能力共同覆盖从高保真物理计算、数据生成，到 Physics 建模、训练、推理与验证的完整工作链。
 
