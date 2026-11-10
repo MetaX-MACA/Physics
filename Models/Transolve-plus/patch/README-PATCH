@@ -1,0 +1,42 @@
+# add_maca_helpers.patch
+
+## 功能说明
+
+在上游 Transolver++ 源码中新增 AirCraft 数据预处理、模型评估和升力系数后处理脚本。
+
+## 新增文件
+
+- `tools/prepare_aircraft.py`
+- `tools/evaluate_aircraft.py`
+- `tools/calculate_lift_metrics.py`
+- `tools/plot_aircraft_cp.py`
+
+## 主要功能
+
+- 将 AirCraft Tecplot 数据转换为上游模型读取的 HDF5 格式；
+- 生成固定的 140 个训练工况和 10 个测试工况配置；
+- 使用保存的 checkpoint 对完整表面点进行推理并输出逐工况误差；
+- 基于预测 `Cp` 和原始三角网格计算压力贡献的升力系数；
+- 汇总表面压力 Relative L2、升力系数 Relative L2 和 R²。
+- 绘制 `Cp` 真值、预测值和逐点绝对误差三联图。
+
+## 适用版本
+
+- 上游仓库：`https://github.com/thuml/Transolver_plus.git`
+- 基准 commit：`d5a23bc734a0ebac56384cf72049a26af9673452`
+
+## 应用方法
+
+在上述版本的上游仓库根目录执行，将 `/path/to` 替换为本开源目录的实际路径：
+
+```bash
+mkdir -p tools
+patch --dry-run --binary -p1 < /path/to/Transolve-plus/patch/add_maca_helpers.patch
+patch --binary -p1 < /path/to/Transolve-plus/patch/add_maca_helpers.patch
+chmod +x tools/prepare_aircraft.py \
+  tools/evaluate_aircraft.py \
+  tools/calculate_lift_metrics.py \
+  tools/plot_aircraft_cp.py
+```
+
+补丁只新增上述文件，不修改上游已有文件。独立补丁内容的许可见同目录 `LICENSE`；上游软件仍适用其原有许可。

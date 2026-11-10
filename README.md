@@ -22,7 +22,8 @@ Physics/
 │   ├── DeepCFD/
 │   ├── GeoPT/
 │   ├── PaddleScience-ModelZoo/
-│   └── PhysicsNeMo-ModelZoo/
+│   ├── PhysicsNeMo-ModelZoo/
+│   └── Transolve-plus/
 │
 ├── Simulation/
 │

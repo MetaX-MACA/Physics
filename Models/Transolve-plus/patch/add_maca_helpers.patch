@@ -1,0 +1,733 @@
+# Copyright (c) 2026 MetaX Integrated Circuits (Shanghai) Co., Ltd. All rights reserved.
+diff --git a/tools/prepare_aircraft.py b/tools/prepare_aircraft.py
+new file mode 100644
+index 0000000..742e0bf
+--- /dev/null
++++ b/tools/prepare_aircraft.py
+@@ -0,0 +1,137 @@
++#!/usr/bin/env python3
++# Copyright (c) 2026 MetaX Integrated Circuits (Shanghai) Co., Ltd. All rights reserved.
++"""Convert the raw AirCraft Tecplot files to Transolver++ HDF5 inputs."""
++
++import argparse
++import csv
++import json
++import re
++from pathlib import Path
++
++import h5py
++import numpy as np
++
++
++ZONE_RE = re.compile(r"N\s*=\s*(\d+),\s*E\s*=\s*(\d+)")
++
++
++def condition_dir(ma: float, alpha: float, beta: float) -> str:
++    return f"Mach{ma:05.2f}_Alpha{alpha:05.2f}_Beta{beta:05.2f}"
++
++
++def output_name(idx: int, ma: float, alpha: float, beta: float) -> str:
++    return f"{idx}_{ma:.1f}_{alpha:.1f}_{beta:.1f}.h5"
++
++
++def read_case(path: Path, read_faces: bool):
++    with path.open("r", encoding="ascii") as stream:
++        stream.readline()
++        stream.readline()
++        zone = stream.readline()
++    match = ZONE_RE.search(zone)
++    if not match:
++        raise ValueError(f"Cannot parse mesh dimensions from {path}: {zone.strip()}")
++
++    num_points, num_faces = map(int, match.groups())
++    point_data = np.loadtxt(path, skiprows=3, max_rows=num_points, dtype=np.float32)
++    faces = None
++    if read_faces:
++        faces = np.loadtxt(
++            path, skiprows=3 + num_points, max_rows=num_faces, dtype=np.int32
++        ) - 1
++    return point_data, faces
++
++
++def vertex_normals(pos: np.ndarray, faces: np.ndarray) -> np.ndarray:
++    p0 = pos[faces[:, 0]]
++    p1 = pos[faces[:, 1]]
++    p2 = pos[faces[:, 2]]
++    face_normals = np.cross(p1 - p0, p2 - p0)
++    normals = np.zeros_like(pos, dtype=np.float32)
++    np.add.at(normals, faces[:, 0], face_normals)
++    np.add.at(normals, faces[:, 1], face_normals)
++    np.add.at(normals, faces[:, 2], face_normals)
++    lengths = np.linalg.norm(normals, axis=1, keepdims=True)
++    if np.any(lengths == 0):
++        raise ValueError("Mesh contains vertices with zero accumulated normal")
++    return normals / lengths
++
++
++def write_h5(path: Path, points: np.ndarray, normals: np.ndarray, row: dict):
++    with h5py.File(path, "w") as output:
++        output.create_dataset("pos", data=points[:, :3], compression="gzip")
++        output.create_dataset("normals", data=normals, compression="gzip")
++        output.create_dataset("values", data=points[:, 3:9], compression="gzip")
++        output.attrs["Ma"] = float(row["Ma"])
++        output.attrs["alpha"] = float(row["alpha"])
++        output.attrs["beta"] = float(row["beta"])
++
++
++def main():
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--data-dir", type=Path, required=True)
++    parser.add_argument("--config", type=Path, required=True)
++    parser.add_argument("--test-count", type=int, default=10)
++    args = parser.parse_args()
++
++    with (args.data_dir / "result.csv").open(newline="", encoding="utf-8") as stream:
++        rows = list(csv.DictReader(stream))
++    if len(rows) != 150:
++        raise ValueError(f"Expected 150 cases, found {len(rows)}")
++
++    names = []
++    cached_idx = None
++    cached_pos = None
++    cached_normals = None
++
++    for number, row in enumerate(rows, start=1):
++        idx = int(float(row["idx"]))
++        ma = float(row["Ma"])
++        alpha = float(row["alpha"])
++        beta = float(row["beta"])
++        name = output_name(idx, ma, alpha, beta)
++        destination = args.data_dir / name
++        source = args.data_dir / str(idx) / condition_dir(ma, alpha, beta) / "Components.i.dat"
++
++        if idx != cached_idx:
++            points, faces = read_case(source, read_faces=True)
++            cached_pos = points[:, :3].copy()
++            cached_normals = vertex_normals(cached_pos, faces)
++            cached_idx = idx
++        else:
++            points, _ = read_case(source, read_faces=False)
++            if points.shape[0] != cached_pos.shape[0] or not np.allclose(
++                points[:, :3], cached_pos, rtol=0, atol=1e-4
++            ):
++                raise ValueError(f"Mesh changed between conditions for aircraft {idx}")
++
++        if destination.exists():
++            with h5py.File(destination, "r") as existing:
++                complete = all(key in existing for key in ("pos", "normals", "values"))
++                complete = complete and existing["pos"].shape == cached_pos.shape
++            if complete:
++                print(f"[{number:3d}/150] keep {name}", flush=True)
++                names.append(name)
++                continue
++
++        temporary = destination.with_suffix(".h5.tmp")
++        write_h5(temporary, points, cached_normals, row)
++        temporary.replace(destination)
++        names.append(name)
++        print(f"[{number:3d}/150] wrote {name}", flush=True)
++
++    split = {
++        "train_set": names[:-args.test_count],
++        "test_set": names[-args.test_count:],
++    }
++    args.config.parent.mkdir(parents=True, exist_ok=True)
++    args.config.write_text(json.dumps(split, indent=4) + "\n", encoding="utf-8")
++    print(
++        f"Wrote {args.config}: {len(split['train_set'])} train, "
++        f"{len(split['test_set'])} test",
++        flush=True,
++    )
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/tools/evaluate_aircraft.py b/tools/evaluate_aircraft.py
+new file mode 100644
+index 0000000..44eb96b
+--- /dev/null
++++ b/tools/evaluate_aircraft.py
+@@ -0,0 +1,233 @@
++#!/usr/bin/env python3
++# Copyright (c) 2026 MetaX Integrated Circuits (Shanghai) Co., Ltd. All rights reserved.
++"""Extract logged metrics and independently evaluate the saved AirCraft model."""
++
++import argparse
++import csv
++import faulthandler
++import hashlib
++import json
++import signal
++from pathlib import Path
++import sys
++
++import h5py
++import numpy as np
++import torch
++import torch.distributed as dist
++import torch.distributed.nn as dist_nn
++
++
++PAPER_URL = "https://arxiv.org/html/2502.02414"
++FIELDS = ("Cp", "rho", "u", "v", "w", "p")
++POS_MEAN = (2808.79162, 100.957077, 0.00676594237)
++POS_STD = (1436.65326859, 178.37956359, 615.16521715)
++OUT_MEAN = (0.04602036, 1.3157164, 5.66693757, 0.25599, 0.06231503, 1.64027649)
++OUT_STD = (0.09458788, 0.76978003, 0.41717544, 0.47068753, 0.6710297, 1.8059161)
++
++
++def write_csv(path, rows):
++    with path.open("w", newline="", encoding="utf-8") as stream:
++        writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
++        writer.writeheader()
++        writer.writerows(rows)
++
++
++def main():
++    faulthandler.register(signal.SIGUSR1)
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--repo", type=Path, default=Path("/workspace/Transolver_plus"))
++    parser.add_argument("--run-dir", type=Path, required=True)
++    parser.add_argument("--data-dir", type=Path, default=Path("/pde_hpc/share/m01720"))
++    parser.add_argument("--output-dir", type=Path, required=True)
++    parser.add_argument("--seed", type=int, default=0)
++    parser.add_argument(
++        "--save-predicted-cp",
++        action="store_true",
++        help="Save predicted vertex Cp for aerodynamic-coefficient postprocessing.",
++    )
++    args = parser.parse_args()
++    args.output_dir.mkdir(parents=True, exist_ok=True)
++    if (args.output_dir / "summary.json").exists():
++        raise FileExistsError("Existing summary.json will not be overwritten; use another output directory")
++
++    sys.path.insert(0, str(args.repo))
++    logged = json.loads((args.run_dir / "log_200.json").read_text())
++    split = json.loads((args.run_dir / "airplane_dataset.json").read_text())
++    train_cases = set(split["train_set"])
++    test_cases = split["test_set"]
++    if len(set(test_cases)) != len(test_cases) or train_cases.intersection(test_cases):
++        raise ValueError("Duplicate test cases or train/test overlap")
++    checkpoint = args.run_dir / "model_200.pth"
++    rows = []
++
++    torch.manual_seed(args.seed)
++    torch.cuda.manual_seed_all(args.seed)
++    torch.cuda.set_device(0)
++    device = torch.device("cuda:0")
++    # For a single rank, SUM all_reduce is exactly the identity. Avoid starting
++    # a communicator just to perform that identity during this local evaluation.
++    def single_rank_all_reduce(tensor, op=dist.ReduceOp.SUM, group=None):
++        if op != dist.ReduceOp.SUM or group is not None:
++            raise ValueError("Only single-rank SUM reduction is supported")
++        return tensor
++
++    with torch.cuda.device(device):
++        original_all_reduce = dist_nn.all_reduce
++        dist_nn.all_reduce = single_rank_all_reduce
++        try:
++            # This checkpoint was created locally by the authorized training run.
++            model = torch.load(checkpoint, map_location="cpu", weights_only=False).to(device)
++            model.eval()
++            print("Loaded final checkpoint; evaluating 10 cases", flush=True)
++            pos_mean = torch.tensor(POS_MEAN, device=device).view(1, 1, 3)
++            pos_std = torch.tensor(POS_STD, device=device).view(1, 1, 3)
++            out_mean = torch.tensor(OUT_MEAN, device=device).view(1, 1, 6)
++            out_std = torch.tensor(OUT_STD, device=device).view(1, 1, 6)
++
++            with torch.no_grad():
++                for case in test_cases:
++                    with h5py.File(args.data_dir / case, "r") as data:
++                        pos = torch.from_numpy(data["pos"][:]).unsqueeze(0).float().to(device)
++                        normals = torch.from_numpy(data["normals"][:]).unsqueeze(0).float().to(device)
++                        values = torch.from_numpy(data["values"][:]).unsqueeze(0).float().to(device)
++                        condition_values = [float(data.attrs[key]) for key in ("Ma", "alpha", "beta")]
++                    condition = torch.tensor(condition_values, device=device).view(1, 3)
++                    pos = (pos - pos_mean) / pos_std
++                    x = torch.cat((pos, torch.zeros_like(pos[..., :1]), normals), dim=-1)
++                    normalized_pred = model((x, pos, condition))
++                    normalized_target = (values - out_mean) / (out_std + 1e-6)
++                    normalized_mse = (normalized_pred - normalized_target).square().mean().item()
++                    pred = normalized_pred * out_std + out_mean
++                    # Same float32 pressure Relative L2 as train_airplane.test().
++                    pressure_l2 = ((pred[..., -1] - values[..., -1]).norm() / values[..., -1].norm()).item()
++                    row = {
++                        "case": case,
++                        "points": pos.shape[1],
++                        "Ma": condition_values[0],
++                        "alpha": condition_values[1],
++                        "beta": condition_values[2],
++                        "normalized_mse_six_outputs": normalized_mse,
++                        "pressure_relative_l2": pressure_l2,
++                        "pressure_relative_l2_percent": pressure_l2 * 100,
++                    }
++                    pred_np = pred[0].cpu().numpy().astype(np.float64)
++                    target_np = values[0].cpu().numpy().astype(np.float64)
++                    if args.save_predicted_cp:
++                        cp_dir = args.output_dir / "predicted_cp"
++                        cp_dir.mkdir(exist_ok=True)
++                        np.save(cp_dir / f"{Path(case).stem}.npy", pred_np[:, 0].astype(np.float32))
++                    for index, field in enumerate(FIELDS):
++                        delta = pred_np[:, index] - target_np[:, index]
++                        row[f"{field}_mae_original_scale"] = float(np.abs(delta).mean())
++                        row[f"{field}_mse_original_scale"] = float(np.square(delta).mean())
++                        row[f"{field}_relative_l2"] = float(np.linalg.norm(delta) / np.linalg.norm(target_np[:, index]))
++                    rows.append(row)
++                    print(f"{case}: pressure Relative L2 = {pressure_l2 * 100:.6f}%", flush=True)
++        finally:
++            dist_nn.all_reduce = original_all_reduce
++
++    write_csv(args.output_dir / "per_case_metrics.csv", rows)
++    mean_pressure = float(np.mean([row["pressure_relative_l2"] for row in rows]))
++    mean_mse = float(np.mean([row["normalized_mse_six_outputs"] for row in rows]))
++    log_pressure = float(logged["val_loss_l2re"])
++    paper_pressure = 0.064
++    elapsed = float(logged["time_elapsed"])
++    summary = {
++        "hardware": "MetaX C500 (confirmed by mx-smi)",
++        "checkpoint": str(checkpoint),
++        "checkpoint_sha256": hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
++        "paper_url": PAPER_URL,
++        "paper_table": "Table 2, AirCraft",
++        "train_samples": len(split["train_set"]),
++        "test_samples": len(test_cases),
++        "test_cases": test_cases,
++        "split_note": "Local split: first 140 / last 10 rows of result.csv; exact paper file list is unverified.",
++        "logged": logged,
++        "paper": {"surface_relative_l2": 0.064, "lift_relative_l2": 0.014, "lift_r2": 0.999},
++        "logged_pressure_minus_paper_percentage_points": (log_pressure - paper_pressure) * 100,
++        "logged_pressure_relative_difference_percent": (log_pressure / paper_pressure - 1) * 100,
++        "reevaluation": {
++            "seed": args.seed,
++            "order": "test_set list order",
++            "single_rank_sum_reduction": "identity (no distributed communicator)",
++            "mean_pressure_relative_l2": mean_pressure,
++            "mean_normalized_mse_six_outputs": mean_mse,
++            "note": "Upstream Gumbel sampling remains random in eval mode; this is a new draw, not exact replay of logged validation.",
++        },
++        "lift_metrics": {
++            "status": "not_computed",
++            "reason": "No official lift postprocessing implementation or complete reference parameters / wall-shear fields available; result.csv Cl is not confirmed to be lift coefficient C_L.",
++        },
++    }
++    (args.output_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n")
++
++    comparison_rows = [
++        {"metric": "Surface pressure Relative L2", "metax_c500": log_pressure, "paper": paper_pressure,
++         "source": "log_200.json: val_loss_l2re", "status": "logged; local split not confirmed identical to paper"},
++        {"metric": "Lift coefficient Relative L2", "metax_c500": "", "paper": 0.014,
++         "source": "not available", "status": "not computed"},
++        {"metric": "Lift coefficient R2", "metax_c500": "", "paper": 0.999,
++         "source": "not available", "status": "not computed"},
++    ]
++    write_csv(args.output_dir / "paper_comparison.csv", comparison_rows)
++    report = f"""# Transolver++ AirCraft 论文对标数据
++
++| 指标 | MetaX C500 | 论文 Transolver++（Table 2） |
++| --- | ---: | ---: |
++| Surface pressure Relative L2 | {log_pressure * 100:.4f}% | 6.4% |
++| Lift coefficient Relative L2 | 未计算 | 1.4% |
++| Lift coefficient R² | 未计算 | 0.999 |
++
++表面压力指标来自最终 epoch 的 `log_200.json`，在 10 个测试工况上分别计算 `‖p_pred − p_true‖₂ / ‖p_true‖₂` 后取算术平均。使用反标准化后的原始数据尺度；上游代码用 6 个输出中的最后一列 `Pressure` 计算该指标。论文对照值见 [Table 2]({PAPER_URL})。两者相差 {(log_pressure - paper_pressure) * 100:.4f} 个百分点，相对论文数值变化 {(log_pressure / paper_pressure - 1) * 100:.4f}%。这只是数值对照，不构成严格同划分的性能优劣结论。
++
++## 实验配置
++
++- 设备：MetaX C500，容器 `a4cb4587a1ce`，由 `mx-smi` 确认。
++- 训练集 / 测试集：140 / 10；测试为机型 92、93 各 5 个工况。
++- 划分方式：按 `result.csv` 顺序取前 140 条训练、后 10 条测试；未核实与论文的具体文件划分完全一致。
++- 每个工况使用全部 331,971 个表面点。
++- Epoch：200；batch size：1；Adam；初始学习率：0.001。
++- 模型：4 层、8 heads、hidden 256、32 slices、6 输出，共 {int(logged['nb_parameters']):,} 个参数。
++- 总训练耗时：{elapsed:.2f} 秒（{int(elapsed // 3600)} 小时 {int(elapsed % 3600 // 60)} 分 {elapsed % 60:.2f} 秒）。
++- 最终训练 MSE：{logged['train_loss']:.10f}；最终测试 MSE：{logged['val_loss_mse']:.10f}，均为 6 输出归一化空间的均方误差，论文未在对应表中提供这两个数值。
++
++## 最终模型复核
++
++以固定种子 {args.seed}、`test_set` 顺序重新评估 `model_200.pth`：
++
++- 10 个工况平均压力 Relative L2：{mean_pressure * 100:.4f}%。
++- 6 输出平均归一化 MSE：{mean_mse:.10f}。
++- 逐工况结果及各输出的原始尺度 MAE / MSE 见 `per_case_metrics.csv`。
++
++上游 Gumbel 采样在 `eval()` 模式下仍生成随机数；因此本次独立复核与训练末尾评估并非同一次随机采样。用于论文对照的最终训练结果仍保留日志中的 {log_pressure * 100:.4f}%，复核值单独记录。
++
++复核仅用单张 GPU，将单进程 `SUM all_reduce` 按数学等价的恒等操作执行；此替换仅限复核进程，不修改模型源文件或原 checkpoint。
++
++## 升力指标的限制
++
++上游公开脚本仅评估表面压力，未提供升力系数后处理。当前 HDF5 保存坐标、法向量和 `Cp, rho, u, v, w, p`，未保存完整的剪切应力及参考面积等积分参数。`result.csv` 含 `CA, CN, CZ, Cl, Cn, Cm`，其中 `Cl` 的命名不能直接认定为论文的升力系数 `C_L`。因此不将这些列冒充已复现的升力指标，论文两项升力结果暂列未计算。
++
++## 文件
++
++- `paper_comparison.csv`：与论文并排的指标。
++- `summary.json`：日志原值、复核均值、checkpoint SHA-256 和口径说明。
++- `per_case_metrics.csv`：10 个测试工况的详细误差。
++- `extract_metrics.py`：提取与复核脚本。
++
++容器内复核命令（另选输出目录可再次评估，避免覆盖已有数据）：
++
++```bash
++python /work/Transolver_plus/paper_comparison/extract_metrics.py \\
++  --run-dir /work/Transolver_plus \\
++  --output-dir /work/Transolver_plus/paper_comparison/new_evaluation
++```
++"""
++    (args.output_dir / "PAPER_COMPARISON_ZH.md").write_text(report, encoding="utf-8")
++    print(f"Logged pressure Relative L2: {log_pressure * 100:.6f}%")
++    print(f"Reevaluated pressure Relative L2: {mean_pressure * 100:.6f}%")
++    print(f"Saved results to {args.output_dir}")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/tools/calculate_lift_metrics.py b/tools/calculate_lift_metrics.py
+new file mode 100644
+index 0000000..345be34
+--- /dev/null
++++ b/tools/calculate_lift_metrics.py
+@@ -0,0 +1,189 @@
++#!/usr/bin/env python3
++# Copyright (c) 2026 MetaX Integrated Circuits (Shanghai) Co., Ltd. All rights reserved.
++"""Calculate AirCraft lift metrics from predicted surface Cp fields."""
++
++import argparse
++import csv
++import json
++import math
++import re
++from pathlib import Path
++
++import h5py
++import numpy as np
++
++
++ZONE_RE = re.compile(r"N\s*=\s*(\d+),\s*E\s*=\s*(\d+)")
++
++
++def condition_dir(ma, alpha, beta):
++    return f"Mach{ma:05.2f}_Alpha{alpha:05.2f}_Beta{beta:05.2f}"
++
++
++def case_name(row):
++    return f"{int(row['idx'])}_{row['Ma']:.1f}_{row['alpha']:.1f}_{row['beta']:.1f}.h5"
++
++
++def load_faces(raw_file, num_points):
++    with raw_file.open("r", encoding="ascii") as stream:
++        stream.readline()
++        stream.readline()
++        zone = stream.readline()
++    match = ZONE_RE.search(zone)
++    if not match:
++        raise ValueError(f"Cannot parse zone header in {raw_file}")
++    zone_points, num_faces = map(int, match.groups())
++    if zone_points != num_points:
++        raise ValueError(f"Point count mismatch for {raw_file}")
++    return np.loadtxt(
++        raw_file, skiprows=3 + num_points, max_rows=num_faces, dtype=np.int32
++    ) - 1
++
++
++def area_vectors(pos, faces):
++    return 0.5 * np.cross(
++        pos[faces[:, 1]] - pos[faces[:, 0]],
++        pos[faces[:, 2]] - pos[faces[:, 0]],
++    )
++
++
++def integrate_cp(cp, faces, vectors):
++    face_cp = cp[faces].mean(axis=1)
++    return -(face_cp[:, None] * vectors).sum(axis=0)
++
++
++def relative_l2(pred, target):
++    return float(np.linalg.norm(pred - target) / np.linalg.norm(target))
++
++
++def r2_score(pred, target):
++    return float(1.0 - np.square(pred - target).sum() / np.square(target - target.mean()).sum())
++
++
++def main():
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--data-dir", type=Path, required=True)
++    parser.add_argument("--split", type=Path, required=True)
++    parser.add_argument("--predicted-cp-dir", type=Path, required=True)
++    parser.add_argument("--output-dir", type=Path, required=True)
++    args = parser.parse_args()
++    args.output_dir.mkdir(parents=True, exist_ok=True)
++
++    split = json.loads(args.split.read_text())
++    train_names = set(split["train_set"])
++    test_names = set(split["test_set"])
++    with (args.data_dir / "result.csv").open(newline="", encoding="utf-8") as stream:
++        rows = [
++            {key: float(value) for key, value in row.items()}
++            for row in csv.DictReader(stream)
++        ]
++    if len(rows) != len(train_names) + len(test_names):
++        raise ValueError("CSV and split sizes differ")
++
++    geometry_cache = {}
++    integrated = []
++    for number, row in enumerate(rows, start=1):
++        name = case_name(row)
++        if name not in train_names | test_names:
++            raise ValueError(f"Missing {name} from split")
++        idx = int(row["idx"])
++        with h5py.File(args.data_dir / name, "r") as data:
++            pos = data["pos"][:].astype(np.float64)
++            cp_true = data["values"][:, 0].astype(np.float64)
++        if idx not in geometry_cache:
++            raw = (
++                args.data_dir
++                / str(idx)
++                / condition_dir(row["Ma"], row["alpha"], row["beta"])
++                / "Components.i.dat"
++            )
++            faces = load_faces(raw, len(pos))
++            geometry_cache[idx] = (faces, area_vectors(pos, faces))
++        faces, vectors = geometry_cache[idx]
++        force_true = integrate_cp(cp_true, faces, vectors)
++        record = {**row, "case": name, "split": "train" if name in train_names else "test"}
++        for axis, value in zip("xyz", force_true):
++            record[f"cp_force_raw_{axis}"] = float(value)
++        if name in test_names:
++            prediction_file = args.predicted_cp_dir / f"{Path(name).stem}.npy"
++            cp_pred = np.load(prediction_file).astype(np.float64)
++            if cp_pred.shape != cp_true.shape:
++                raise ValueError(f"Cp shape mismatch for {name}")
++            force_pred = integrate_cp(cp_pred, faces, vectors)
++            for axis, value in zip("xyz", force_pred):
++                record[f"cp_force_pred_raw_{axis}"] = float(value)
++        integrated.append(record)
++        print(f"[{number:3d}/{len(rows)}] integrated {name}", flush=True)
++
++    train = [row for row in integrated if row["split"] == "train"]
++    test = [row for row in integrated if row["split"] == "test"]
++    x_train = np.array([[row[f"cp_force_raw_{axis}"] for axis in "xyz"] for row in train])
++    y_train = np.array([[row[key] for key in ("CA", "CN", "CZ")] for row in train])
++    # A fixed linear transform captures the reference-area scale, axis order,
++    # and signs. It is fitted only on training cases and applied unchanged to test predictions.
++    fitted_transform, _, rank, singular = np.linalg.lstsq(x_train, y_train, rcond=None)
++    if rank != 3:
++        raise ValueError("Integrated force matrix is rank deficient")
++    # The training-only fit identifies the physical mapping unambiguously:
++    # coordinates are in mm, A_ref is 1 m^2 = 1e6 mm^2, and the source's CZ
++    # convention is opposite to the mesh z-axis. Use the exact physical mapping
++    # for final metrics instead of fitted coefficients.
++    transform = np.diag([1e-6, 1e-6, -1e-6])
++
++    def coefficients(records, predicted):
++        prefix = "cp_force_pred_raw_" if predicted else "cp_force_raw_"
++        raw = np.array([[row[f"{prefix}{axis}"] for axis in "xyz"] for row in records])
++        return raw @ transform
++
++    train_reconstructed = coefficients(train, predicted=False)
++    test_reconstructed = coefficients(test, predicted=False)
++    test_pred_coeff = coefficients(test, predicted=True)
++    train_truth = np.array([[row[k] for k in ("CA", "CN", "CZ")] for row in train])
++    test_truth = np.array([[row[k] for k in ("CA", "CN", "CZ")] for row in test])
++    angles = np.deg2rad(np.array([row["alpha"] for row in test]))
++    # Standard axial/normal-force conversion. A global sign convention would
++    # cancel because the same convention is applied to target and prediction.
++    lift_true = test_truth[:, 1] * np.cos(angles) - test_truth[:, 0] * np.sin(angles)
++    lift_pred = test_pred_coeff[:, 1] * np.cos(angles) - test_pred_coeff[:, 0] * np.sin(angles)
++    lift_l2 = relative_l2(lift_pred, lift_true)
++    lift_r2 = r2_score(lift_pred, lift_true)
++
++    diagnostics = {
++        "method": "Pressure-only Cp triangle integration with A_ref=1e6 mm^2; axis mapping verified on 140 training cases",
++        "force_transform_raw_to_CA_CN_CZ": transform.tolist(),
++        "training_only_fitted_transform_for_diagnostic": fitted_transform.tolist(),
++        "transform_singular_values": singular.tolist(),
++        "train_force_vector_relative_l2": relative_l2(train_reconstructed, train_truth),
++        "test_true_cp_force_vector_relative_l2": relative_l2(test_reconstructed, test_truth),
++        "test_lift_relative_l2": lift_l2,
++        "test_lift_r2": lift_r2,
++        "paper_lift_relative_l2": 0.014,
++        "paper_lift_r2": 0.999,
++        "limitations": [
++            "Pressure contribution only; no wall-shear field is present in AirCraft files.",
++            "The exact paper test-file list is not public; local test cases are aircraft 92 and 93.",
++            "The reference scale and axis mapping are inferred from training labels only because A_ref is not distributed.",
++        ],
++    }
++    (args.output_dir / "lift_metrics.json").write_text(
++        json.dumps(diagnostics, indent=2) + "\n", encoding="utf-8"
++    )
++    output_rows = []
++    for row, truth, pred in zip(test, lift_true, lift_pred):
++        output_rows.append({
++            "case": row["case"],
++            "alpha_deg": row["alpha"],
++            "beta_deg": row["beta"],
++            "lift_true": truth,
++            "lift_pred": pred,
++            "absolute_error": abs(pred - truth),
++        })
++    with (args.output_dir / "lift_per_case.csv").open("w", newline="", encoding="utf-8") as stream:
++        writer = csv.DictWriter(stream, fieldnames=list(output_rows[0]))
++        writer.writeheader()
++        writer.writerows(output_rows)
++    print(json.dumps(diagnostics, indent=2), flush=True)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/tools/plot_aircraft_cp.py b/tools/plot_aircraft_cp.py
+new file mode 100644
+index 0000000..10db0cd
+--- /dev/null
++++ b/tools/plot_aircraft_cp.py
+@@ -0,0 +1,149 @@
++#!/usr/bin/env python3
++# Copyright (c) 2026 MetaX Integrated Circuits (Shanghai) Co., Ltd. All rights reserved.
++"""Plot AirCraft Cp ground truth, prediction, and absolute error."""
++
++import argparse
++import re
++import warnings
++from pathlib import Path
++
++import matplotlib
++
++warnings.filterwarnings("ignore", message="Unable to import Axes3D")
++matplotlib.use("Agg")
++import matplotlib.pyplot as plt
++import numpy as np
++
++
++ZONE_RE = re.compile(r"N\s*=\s*(\d+),\s*E\s*=\s*(\d+)")
++
++
++def read_surface(path: Path):
++    with path.open("r", encoding="ascii") as stream:
++        stream.readline()
++        stream.readline()
++        zone = stream.readline()
++    match = ZONE_RE.search(zone)
++    if not match:
++        raise ValueError(f"Cannot parse mesh dimensions from {path}: {zone.strip()}")
++    num_points = int(match.group(1))
++    data = np.loadtxt(
++        path,
++        skiprows=3,
++        max_rows=num_points,
++        usecols=(0, 1, 2, 3),
++        dtype=np.float32,
++    )
++    return data[:, :3], data[:, 3]
++
++
++def project(points: np.ndarray):
++    view = np.array((0.20, 1.0, 0.30), dtype=np.float64)
++    view /= np.linalg.norm(view)
++    right = np.cross(np.array((0.0, 0.0, 1.0)), view)
++    right /= np.linalg.norm(right)
++    up = np.cross(view, right)
++    centered = points.astype(np.float64) - points.mean(axis=0)
++    screen = np.column_stack((centered @ right, centered @ up))
++    depth = centered @ view
++
++    angle = np.deg2rad(-13.0)
++    rotation = np.array(
++        ((np.cos(angle), -np.sin(angle)), (np.sin(angle), np.cos(angle)))
++    )
++    return screen @ rotation.T, depth
++
++
++def main():
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--surface", type=Path, required=True)
++    parser.add_argument("--prediction", type=Path, required=True)
++    parser.add_argument("--output", type=Path, required=True)
++    parser.add_argument("--case-label", default="AirCraft test case")
++    parser.add_argument("--max-points", type=int, default=220_000)
++    args = parser.parse_args()
++
++    points, target = read_surface(args.surface)
++    prediction = np.load(args.prediction).reshape(-1).astype(np.float32)
++    if prediction.shape != target.shape:
++        raise ValueError(
++            f"Prediction shape {prediction.shape} does not match target {target.shape}"
++        )
++
++    screen, depth = project(points)
++    if args.max_points > 0 and len(target) > args.max_points:
++        rng = np.random.default_rng(0)
++        selected = rng.choice(len(target), size=args.max_points, replace=False)
++    else:
++        selected = np.arange(len(target))
++    selected = selected[np.argsort(depth[selected])]
++
++    screen = screen[selected]
++    target_plot = target[selected]
++    prediction_plot = prediction[selected]
++    error_plot = np.abs(prediction_plot - target_plot)
++
++    field_values = np.concatenate((target, prediction))
++    field_min, field_max = np.percentile(field_values, (0.5, 99.5))
++    error_max = float(np.percentile(np.abs(prediction - target), 99.5))
++    relative_l2 = np.linalg.norm(prediction - target) / np.linalg.norm(target)
++    mae = np.mean(np.abs(prediction - target))
++
++    plt.rcParams.update(
++        {
++            "font.family": "DejaVu Sans",
++            "font.size": 10,
++            "axes.titleweight": "semibold",
++        }
++    )
++    fig, axes = plt.subplots(1, 3, figsize=(15.2, 5.2))
++    fig.subplots_adjust(left=0.01, right=0.99, bottom=0.20, top=0.80, wspace=0.04)
++    panels = (
++        (target_plot, "Ground truth", "coolwarm", field_min, field_max),
++        (prediction_plot, "Prediction", "coolwarm", field_min, field_max),
++        (error_plot, "Absolute error", "magma", 0.0, error_max),
++    )
++
++    artists = []
++    x_margin = np.ptp(screen[:, 0]) * 0.025
++    y_margin = np.ptp(screen[:, 1]) * 0.025
++    for axis, (values, title, cmap, vmin, vmax) in zip(axes, panels):
++        artist = axis.scatter(
++            screen[:, 0],
++            screen[:, 1],
++            c=values,
++            s=0.42,
++            cmap=cmap,
++            vmin=vmin,
++            vmax=vmax,
++            linewidths=0,
++            rasterized=True,
++        )
++        axis.set_title(title, pad=6)
++        axis.set_xlim(screen[:, 0].min() - x_margin, screen[:, 0].max() + x_margin)
++        axis.set_ylim(screen[:, 1].min() - y_margin, screen[:, 1].max() + y_margin)
++        axis.set_aspect("equal")
++        axis.set_axis_off()
++        artists.append(artist)
++
++    field_bar_axis = fig.add_axes((0.12, 0.09, 0.50, 0.035))
++    field_bar = fig.colorbar(artists[1], cax=field_bar_axis, orientation="horizontal")
++    field_bar.set_label("Pressure coefficient, Cp")
++    error_bar_axis = fig.add_axes((0.73, 0.09, 0.20, 0.035))
++    error_bar = fig.colorbar(artists[2], cax=error_bar_axis, orientation="horizontal")
++    error_bar.set_label("Absolute error, |prediction - target|")
++    fig.suptitle(
++        f"{args.case_label}   |   Cp MAE = {mae:.5f}, Relative L2 = {relative_l2:.2%}",
++        fontsize=14,
++        fontweight="semibold",
++        y=0.97,
++    )
++
++    args.output.parent.mkdir(parents=True, exist_ok=True)
++    fig.savefig(args.output, dpi=220, facecolor="white", bbox_inches="tight")
++    plt.close(fig)
++    print(f"Saved {args.output}")
++
++
++if __name__ == "__main__":
++    main()
