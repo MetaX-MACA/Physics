@@ -43,9 +43,9 @@ Physics/
 
 本项目围绕 **Models、Simulation、Frameworks** 三类能力展开：
 
-- **[Models](./Models)**：支持 [DeepCFD](./Models/DeepCFD)、[GeoPT](./Models/GeoPT)、Transolver、[DoMINO](./Models/PhysicsNeMo-ModelZoo/Domino)、[AeroGraphNet](./Models/PaddleScience-ModelZoo/DrivAerNet) 等代表性 Physics 模型，并通过 [PhysicsNeMo-ModelZoo](./Models/PhysicsNeMo-ModelZoo)、[PaddleScience-ModelZoo](./Models/PaddleScience-ModelZoo) 持续扩展模型与案例覆盖。
+- **[Models](./Models)**：支持 [DeepCFD](./Models/DeepCFD)、[GeoPT](./Models/GeoPT)、[Transolver](./Models/Transolve-plus)、[DoMINO](./Models/PhysicsNeMo-ModelZoo/Domino)、[AeroGraphNet](./Models/PaddleScience-ModelZoo/DrivAerNet) 等代表性 Physics 模型，并通过 [PhysicsNeMo-ModelZoo](./Models/PhysicsNeMo-ModelZoo)、[PaddleScience-ModelZoo](./Models/PaddleScience-ModelZoo) 持续扩展模型与案例覆盖。
 - **Simulation**：预留 GPU 加速物理数值模拟应用目录，当前仅包含分类说明。
-- **[Frameworks](./Frameworks)**：支持 [PhysicsNeMo](./Frameworks/PhysicsNeMo)、[PaddleScience](./Frameworks/PaddleScience)、[DeepXDE](./Frameworks/DeepXDE)、[NeuralOperator](./Frameworks/NeuralOperator) 等主流 Physics 与 Scientific Machine Learning 开发框架。
+- **[Frameworks](./Frameworks)**：支持 [PhysicsNeMo](./Frameworks/PhysicsNeMo)、[PaddleScience](./Frameworks/PaddleScience)、[DeepXDE](./Frameworks/DeepXDE)、[NeuralOperator](./Frameworks/NeuralOperator)、[HydroGym](./Frameworks/HydroGym) 等主流 Physics 与 Scientific Machine Learning 开发框架。
 
 三类能力共同覆盖从高保真物理计算、数据生成，到 Physics 建模、训练、推理与验证的完整工作链。
 
@@ -80,6 +80,7 @@ Physics/
 
 ## 📝 更新日志
 
+- **2026-11-12**: 添加HydroGym框架和Transolve-plus模型介绍。
 - **2026-09-03**：项目结构调整为 `Models / Simulation / Frameworks`，新增 GeoPT 项目。
 - **2026-08-17**：CFD-GCN、Aneurysm、DrivAerNet 模型归入 PaddleScience-ModelZoo。
 - **2026-07-14**：初始版本，包含 DeepCFD、CFD-GCN、Aneurysm、DrivAerNet 等模型，并提供基础用户指南。
