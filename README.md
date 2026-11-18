@@ -80,6 +80,7 @@ Physics/
 
 ## 📝 更新日志
 
+- **2026-11-17**: 新增21个PhysicsNeMo-ModelZoo模型。
 - **2026-11-12**: 添加HydroGym框架和Transolve-plus模型介绍。
 - **2026-09-03**：项目结构调整为 `Models / Simulation / Frameworks`，新增 GeoPT 项目。
 - **2026-08-17**：CFD-GCN、Aneurysm、DrivAerNet 模型归入 PaddleScience-ModelZoo。
